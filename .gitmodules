@@ -18,3 +18,9 @@
 	url = https://github.com/NVIDIA-NeMo/Gym.git
 	branch = main
 	shallow = true
+[submodule "3rdparty/transformers"]
+	path = 3rdparty/transformers
+	url = https://github.com/huggingface/transformers.git
+[submodule "3rdparty/vllm-project"]
+	path = 3rdparty/vllm-project
+	url = https://github.com/vllm-project/vllm.git
