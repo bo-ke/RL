@@ -12,16 +12,13 @@
 这一行开始写关于本文件的说明与解释
 """
 import os
+import json
 import unittest
 import time
 import ray
 from collections import defaultdict
-
-from src.data.ernie_chat_dataset import (
-    ErnieChatDataset,
-    ErnieChatDataConfig,
-    ernie_chat_data_processor
-)
+import torch
+from PIL import Image
 from torchdata.stateful_dataloader import StatefulDataLoader
 from nemo_rl.data.datasets import AllTaskProcessedDataset
 from nemo_rl.algorithms.utils import get_tokenizer
@@ -36,8 +33,8 @@ from nemo_rl.data.llm_message_utils import (
     batched_message_log_to_flat_message,
     get_keys_from_message_log,
 )
+from nemo_rl.distributed.virtual_cluster import PY_EXECUTABLES
 from nemo_rl.environments.interfaces import EnvironmentInterface
-from nemo_rl.environments.vlm_environment import VLMEnvironment
 from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 from nemo_rl.models.generation.vllm.utils import format_prompt_for_vllm_generation
 from nemo_rl.models.generation.vllm.vllm_generation import VllmGeneration
@@ -52,24 +49,54 @@ from nemo_rl.distributed.ray_actor_environment_registry import (
     get_actor_python_env,
 )
 
+from src.data.ernie_chat_dataset import (
+    ErnieChatDataset,
+    ErnieChatDataConfig,
+    ernie_chat_data_processor
+)
+from src.environments.ernie_router_environment import ErnieRouterEnvironment
+
+
+class MessageLogEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, torch.Tensor):
+            return f"<Tensor shape={tuple(obj.shape)}>"
+        if isinstance(obj, Image.Image):
+            return f"<Image size={obj.size}>"
+        
+        return f"<{type(obj).__name__}>"
 
 class TestErnieChatDataset(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        if not ray.is_initialized():
+            ray.init(num_gpus=1, num_cpus=4, ignore_reinit_error=True,
+                     runtime_env={'excludes': ["*.jsonl"]})
+        print(f"\n{'='*80}")
+        print(f"Ray initialized: {ray.available_resources()}")
+        print(f"{'='*80}\n")
     
+    @classmethod
+    def tearDownClass(cls):
+        if ray.is_initialized():
+            ray.shutdown()
+
     def setUp(self):
         data_config = {
             "filelist": "./conf/data_conf_ernie_router_1119/toy_filelist",
-            "max_input_seq_length": 2048,
+            "max_input_seq_length": 4096,
         }
         env_configs = {
             "ernie_router_chat": {
-                "num_workers": 8,
+                "num_workers": 1,
                 "reward_functions": [
                     {"name": "format", "weight": 0.2},
-                    {"name": "exact_alnum", "weight": 0.8}
+                    {"name": "exact_result", "weight": 0.8}
                 ]
             }
         }
-        self.model_name = "Qwen/Qwen2.5-VL-3B-Instruct"
+        self.model_name = "Qwen/Qwen3-VL-2B-Thinking"
         self.data_config = data_config
         self.env_configs = env_configs
         data = ErnieChatDataset(filelist=data_config['filelist'])
@@ -99,14 +126,14 @@ class TestErnieChatDataset(unittest.TestCase):
         dataloader = StatefulDataLoader(
             self.dataset,
             batch_size=2,
-            shuffle=True,
+            shuffle=False,
             collate_fn=rl_collate_fn,
             drop_last=True,
             num_workers=0,
         )
         for batch in dataloader:
             repeated_batch: BatchedDataDict[DatumSpec] = (
-                batch.repeat_interleave(4))
+                batch.repeat_interleave(2))
             # Convert LLMMessageLogType to FlatMessagesType for generation
             batched_flat, input_lengths = batched_message_log_to_flat_message(
                 repeated_batch["message_log"],
@@ -119,11 +146,9 @@ class TestErnieChatDataset(unittest.TestCase):
     
     def get_task_env(self):
         task_name = "ernie_router_chat"
-        vlm_env = VLMEnvironment.options(  # type: ignore # it's wrapped with ray.remote
+        vlm_env = ErnieRouterEnvironment.options(  # type: ignore # it's wrapped with ray.remote
             runtime_env={
-                "py_executable": get_actor_python_env(
-                    "nemo_rl.environments.vlm_environment.VLMEnvironment"
-                ),
+                "py_executable": PY_EXECUTABLES.SYSTEM,
                 "env_vars": dict(os.environ),  # Pass thru all user environment variables
             }
         ).remote(self.env_configs[task_name])
@@ -132,12 +157,6 @@ class TestErnieChatDataset(unittest.TestCase):
         return task_to_env
 
     def test_vllm_multi_turn_rollout(self):
-        if not ray.is_initialized():
-            ray.init(num_gpus=1, num_cpus=4, ignore_reinit_error=True)
-        print(f"\n{'='*80}")
-        print(f"Ray initialized: {ray.available_resources()}")
-        print(f"{'='*80}\n")
-        
         # 创建 VllmConfig
         vllm_config = VllmConfig(
             vllm_cfg={
@@ -158,7 +177,7 @@ class TestErnieChatDataset(unittest.TestCase):
             top_k=-1,
             top_p=1.0,
             temperature=1.0,
-            max_new_tokens=50,
+            max_new_tokens=2048,
             stop_strings=[],
             stop_token_ids=[],
             vllm_kwargs={},
@@ -210,7 +229,13 @@ class TestErnieChatDataset(unittest.TestCase):
                 max_rollout_turns=10,
                 greedy=False,
             )
-            print(f"rollout_metrics: {rollout_metrics}")
+            print(f"rollout_metrics: {json.dumps(rollout_metrics,
+                                                 ensure_ascii=False,
+                                                 indent=2)}")
+            print(f"repeated_batch: {json.dumps(repeated_batch.get_dict(),
+                                                ensure_ascii=False,
+                                                indent=2,
+                                                cls=MessageLogEncoder)}")
             break  # 只测试第一个批次
 
 
