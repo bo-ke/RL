@@ -1,17 +1,16 @@
 # -*- coding: utf-8 -*-
 """测试 DTensorPolicyWorkerV2 - 通过 Policy + RayVirtualCluster 使用"""
 
-import os
-import unittest
 import time
-import ray
-import torch
+import unittest
 
-from nemo_rl.models.policy import PolicyConfig
-from nemo_rl.models.policy.lm_policy import Policy
+import ray
+
+from nemo_rl.algorithms.utils import get_tokenizer
 from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 from nemo_rl.distributed.virtual_cluster import RayVirtualCluster
-from nemo_rl.algorithms.utils import get_tokenizer
+from nemo_rl.models.policy import PolicyConfig
+from nemo_rl.models.policy.lm_policy import Policy
 
 
 class TestDTensorPolicyWithPolicyWrapper(unittest.TestCase):
@@ -57,7 +56,7 @@ class TestDTensorPolicyWithPolicyWrapper(unittest.TestCase):
                 "kwargs": {
                     "lr": 1e-5,
                     "weight_decay": 0.01,
-                }
+                },
             },
             train_global_batch_size=2,
             train_micro_batch_size=1,
@@ -96,7 +95,7 @@ class TestDTensorPolicyWithPolicyWrapper(unittest.TestCase):
             bundle_ct_per_node_list=[1],
             use_gpus=True,
             num_gpus_per_node=1,
-            max_colocated_worker_groups=2
+            max_colocated_worker_groups=2,
         )
 
         print(f"✓ Cluster created in {time.perf_counter() - cluster_start:.3f}s")
@@ -123,7 +122,9 @@ class TestDTensorPolicyWithPolicyWrapper(unittest.TestCase):
         )
 
         print(f"✓ Policy created in {time.perf_counter() - policy_start:.3f}s")
-        print(f"  DP size: {cls.policy.sharding_annotations.get_axis_size('data_parallel')}")
+        print(
+            f"  DP size: {cls.policy.sharding_annotations.get_axis_size('data_parallel')}"
+        )
         print(f"{'=' * 80}\n")
 
     @classmethod
