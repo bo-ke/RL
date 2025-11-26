@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 # !/usr/bin/env python3
-"""
-@author: kebo
+"""@author: kebo
 @contact: kebo01@baidu.com
 
 @version: 1.0
@@ -13,10 +12,9 @@
 
 
 """
-import re
-import contextlib
-import io
+
 import logging
+import re
 from functools import partial
 from typing import Any, Callable, List, Optional, TypedDict
 
@@ -43,6 +41,7 @@ class ErnieRouterEnvConfig(TypedDict):
     stop_strings: Optional[list[str]]  # Default stop strings for this env
     reward_functions: List[dict[str, Any]]  # list of reward functions and their weights
 
+
 def format_reward(
     ground_truth: str,
     response: str,
@@ -59,6 +58,7 @@ def format_reward(
         rew += 0.75  # 0.75 points for having answer tags
     return rew, None
 
+
 def exact_answer_alphanumeric_reward(
     ground_truth: str,
     response: str,
@@ -70,6 +70,7 @@ def exact_answer_alphanumeric_reward(
         if ground_truth.lower() in answer.lower():
             return 1.0, True
     return 0.0, False
+
 
 @ray.remote
 class ErnieRouterVerifyWorker:
@@ -196,10 +197,7 @@ class ErnieRouterEnvironment(EnvironmentInterface):
         # flatten the results
         results = [item for sublist in results for item in sublist]
         observations = [
-            {
-                "role": "environment",
-                "content": f"Environment: reward: {result}"
-            }
+            {"role": "environment", "content": f"Environment: reward: {result}"}
             for result in results
         ]
 
