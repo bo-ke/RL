@@ -49,6 +49,11 @@ dependencies = [
   "nvidia-nvshmem-cu12; sys_platform == 'linux' and (platform_machine == 'x86_64' or platform_machine == 'aarch64')", # for deep_ep build
   "swanlab",
   "pyzmq",
+  "decord>=0.6.0",
+  "sentencepiece==0.1.97",
+  "paimon",
+  "bce-bns-proxy>=1.2.3.1",
+  "bce-python-sdk>=0.8.44",
 ]
 
 [project.optional-dependencies]
@@ -195,6 +200,11 @@ mamba-ssm = { git = "https://github.com/state-spaces/mamba.git", rev = "d68d16ed
 nv-grouped-gemm = { git = "https://github.com/fanshiqing/grouped_gemm", tag = "v1.1.4.post7" }
 sgl-kernel = { git = "https://github.com/sgl-project/sglang", tag = "v0.5.7", subdirectory = "sgl-kernel" }
 
+bce-bns-proxy = { index = "baidu-internal" }
+bce-python-sdk = { index = "baidu-internal" }
+# paimon 从 URL 安装
+paimon = { url = "https://nlp-sr-share.bj.bcebos.com/dependencies/paimon-library/paimon-latest.tar.gz" }
+
 [tool.uv.workspace]
 members = [
   "3rdparty/Megatron-LM-workspace",
@@ -217,6 +227,13 @@ explicit = true
 [[tool.uv.index]]
 name = "pytorch-cu129"
 url = "https://download.pytorch.org/whl/cu129"
+explicit = true
+
+[[tool.uv.index]]
+# 定义百度内部索引
+name = "baidu-internal"
+url = "http://pip.baidu-int.com/simple/"
+trusted-host = true
 explicit = true
 
 [tool.uv]
