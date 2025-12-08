@@ -106,7 +106,7 @@ def ernie_chat_data_processor(
     }
     multimodal_keys = get_multimodal_keys_from_processor(processor)
     for key in multimodal_keys:
-        if key in message:
+        if key in message and message[key] is not None:
             model_inputs[key] = PackedTensor(
                 message[key], dim_to_pack=get_dim_to_pack_along(processor, key)
             )
@@ -207,6 +207,7 @@ class ReeaoChatData:
     def __init__(
         self,
         data_config_file,
+        batch_size,
         num_samples=None,  # 明确参数名
         num_epoch=1,
         shuffle_data=True,
@@ -224,6 +225,7 @@ class ReeaoChatData:
             )
         else:
             self.num_samples = num_samples
+        self.batch_size = batch_size
         self._build_data_seq()
         self._epoch = 0
 
@@ -281,6 +283,7 @@ class ErnieChatDataset:
     def __init__(
         self,
         train_data_config,
+        batch_size,
         train_num_samples=None,  # 训练样本数参数
         val_data_path: Optional[str] = None,
         train_split: Optional[str] = None,
@@ -293,7 +296,8 @@ class ErnieChatDataset:
         # store the formatted dataset
         train_ds = ReeaoChatData(
             train_data_config,
-            train_num_samples,
+            batch_size=batch_size,
+            train_num_samples=train_num_samples,
             num_epoch=num_epoch,
             shuffle_data=shuffle,
             seed=seed,

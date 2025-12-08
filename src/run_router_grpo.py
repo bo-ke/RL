@@ -13,16 +13,12 @@
 # limitations under the License.
 
 import argparse
-import base64
 import os
 import pprint
 from collections import defaultdict
-from io import BytesIO
 from typing import Any, Optional
 
-import requests
 from omegaconf import OmegaConf
-from PIL import Image
 from transformers import AutoProcessor
 
 from nemo_rl.algorithms.grpo import MasterConfig, grpo_train, setup
@@ -30,15 +26,8 @@ from nemo_rl.algorithms.utils import get_tokenizer
 from nemo_rl.data import DataConfig
 from nemo_rl.data.datasets import AllTaskProcessedDataset
 from nemo_rl.data.interfaces import (
-    DatumSpec,
-    LLMMessageLogType,
     TaskDataProcessFnCallable,
     TaskDataSpec,
-)
-from nemo_rl.data.multimodal_utils import (
-    PackedTensor,
-    get_dim_to_pack_along,
-    get_multimodal_keys_from_processor,
 )
 from nemo_rl.distributed.ray_actor_environment_registry import (
     get_actor_python_env,
@@ -48,13 +37,8 @@ from nemo_rl.environments.interfaces import EnvironmentInterface
 from nemo_rl.models.generation import configure_generation_config
 from nemo_rl.utils.config import load_config, parse_hydra_overrides
 from nemo_rl.utils.logger import get_next_experiment_dir
-
+from src.data.ernie_chat_dataset import ErnieChatDataset, ernie_chat_data_processor
 from src.environments.ernie_router_environment import ErnieRouterEnvironment
-from src.data.ernie_chat_dataset import (
-    ErnieChatDataset,
-    ErnieChatDataConfig,
-    ernie_chat_data_processor
-)
 
 OmegaConf.register_new_resolver("mul", lambda a, b: a * b)
 
@@ -68,6 +52,7 @@ def parse_args() -> tuple[argparse.Namespace, list[str]]:
     # Parse known args for the script
     args, overrides = parser.parse_known_args()
     return args, overrides
+
 
 def setup_data(
     processor: AutoProcessor,
@@ -85,7 +70,7 @@ def setup_data(
     task_spec contains the task name as well as prompt and system prompt modifiers that can be used by data processor
     """
     print("\n▶ Setting up data...")
-    data: Any = ErnieChatDataset(filelist=data_config['filelist'])
+    data: Any = ErnieChatDataset(train_data_config=data_config["train_data_config"])
 
     task_name = data.task_spec.task_name
     vlm_task_spec = TaskDataSpec(
@@ -153,7 +138,6 @@ def main() -> None:
         print(
             f"📊 Using checkpoint directory: {config['checkpointing']['checkpoint_dir']}"
         )
-    import ray
     # ray.init(local_mode=True)
     init_ray()
 
