@@ -471,7 +471,9 @@ class RayWorkerGroup:
                 )
                 available_addresses.append(addr)
                 available_ports.append(port)
-
+        print(f"bundle_indices_list-{bundle_indices_list}")
+        print(f"Avaliable_addresses-{available_addresses}")
+        print(f"Avaliable_ports-{available_ports}")
         for group_idx, (pg_idx, local_bundle_indices) in enumerate(bundle_indices_list):
             current_group = []
 

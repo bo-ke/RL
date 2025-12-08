@@ -77,15 +77,30 @@ def _get_node_ip_local() -> str:
     return node_ip
 
 
-def _get_free_port_local() -> int:
+# def _get_free_port_local() -> int:
+#     import socket
+
+#     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+#         s.bind(("", 0))  # Bind to port 0 to get a random free port
+#         s.listen(1)
+#         port = s.getsockname()[1]
+
+#     return port
+
+
+def _get_free_port_local(min_port: int = 36000, max_port: int = 65535) -> int:
     import socket
 
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("", 0))  # Bind to port 0 to get a random free port
-        s.listen(1)
-        port = s.getsockname()[1]
+    for port in range(min_port, max_port + 1):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(("", port))
+                s.listen(1)
+                return port
+        except OSError:
+            continue
 
-    return port
+    raise RuntimeError(f"No free port found in range {min_port}-{max_port}")
 
 
 def init_ray(log_dir: Optional[str] = None) -> None:

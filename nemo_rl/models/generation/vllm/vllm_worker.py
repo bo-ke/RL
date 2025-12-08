@@ -327,6 +327,10 @@ class BaseVllmGenerationWorker:
 
         os.environ["VLLM_USE_V1"] = "1" if is_vllm_v1_engine_enabled() else "0"
         os.environ["VLLM_ALLOW_INSECURE_SERIALIZATION"] = "1"
+        os.environ["VLLM_PORT"] = str(
+            int(os.environ["MASTER_PORT"]) + int(os.environ["RANK"]) + 10
+        )
+        # TODO hack vllm/excutor/uniproc_executor.py 多worker启动 导致prot冲突问题
 
         # We should use vLLM DP if ep_size > tp_size since EP_SIZE = DP_SIZE * TP_SIZE in vLLM.
         # See details in https://github.com/vllm-project/vllm/blob/main/examples/offline_inference/data_parallel.py

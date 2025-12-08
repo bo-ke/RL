@@ -53,6 +53,7 @@ AUTOMODEL_FACTORY: Dict[str, Any] = {
     "qwen2_5_vl": AutoModelForImageTextToText,
     "qwen2_vl": AutoModelForImageTextToText,
     "qwen2_5_omni": AutoModelForTextToWaveform,
+    "qwen3_vl": AutoModelForImageTextToText,
     "llava": AutoModelForImageTextToText,
     "internvl": AutoModelForImageTextToText,
     "gemma3": AutoModelForImageTextToText,
@@ -65,6 +66,7 @@ if NEMO_AUTOMODEL_AVAILABLE:
     AUTOMODEL_FACTORY = {
         "qwen2_5_vl": NeMoAutoModelForImageTextToText,
         "qwen2_vl": NeMoAutoModelForImageTextToText,
+        "qwen3_vl": NeMoAutoModelForImageTextToText,
         "qwen2_5_omni": NeMoAutoModelForTextToWaveform,
         "llava": NeMoAutoModelForImageTextToText,
         "internvl": NeMoAutoModelForImageTextToText,

@@ -270,7 +270,10 @@ def get_tokenizer(
         processor = AutoProcessor.from_pretrained(
             tokenizer_config["name"], trust_remote_code=True, use_fast=True
         )
-        tokenizer = processor.tokenizer
+        if hasattr(processor, "tokenizer"):
+            tokenizer = processor.tokenizer
+        else:
+            tokenizer = processor._tokenizer
     else:
         tokenizer = AutoTokenizer.from_pretrained(
             tokenizer_config["name"], trust_remote_code=True
