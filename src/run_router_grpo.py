@@ -70,7 +70,10 @@ def setup_data(
     task_spec contains the task name as well as prompt and system prompt modifiers that can be used by data processor
     """
     print("\n▶ Setting up data...")
-    data: Any = ErnieChatDataset(train_data_config=data_config["train_data_config"])
+    print(f"\n DataBatchSize {data_config["train_batch_size"]}")
+    data: Any = ErnieChatDataset(train_data_config=data_config["train_data_config"],
+                                 batch_size=data_config["train_batch_size"],
+                                 shuffle=data_config["shuffle"])
 
     task_name = data.task_spec.task_name
     vlm_task_spec = TaskDataSpec(
@@ -157,7 +160,9 @@ def main() -> None:
         ), (
             "VLMs require tokenizer to be initialized before generation, so skip_tokenizer_init must be set to False."
         )
-
+    batch_multiplier = config["grpo"]["batch_multiplier"]
+    dataloader_batch_size = config["grpo"]["num_prompts_per_step"]
+    config['data']['train_batch_size'] = int(dataloader_batch_size * batch_multiplier)
     # setup data
     # this function is local to this script, and can be extended to other VLM datasets
     (
@@ -166,7 +171,8 @@ def main() -> None:
         task_to_env,
         val_task_to_env,
     ) = setup_data(processor, config["data"], config["env"], config["grpo"]["seed"])
-
+    # 关闭dataloader shuffle机制，shuffle由Dataset内部维护
+    config['data']['shuffle'] = False
     (
         policy,
         policy_generation,
