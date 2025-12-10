@@ -35,6 +35,8 @@ from nemo_rl.data.multimodal_utils import (
     get_dim_to_pack_along,
     get_multimodal_keys_from_processor,
 )
+from nemo_rl.data.llm_message_utils import get_formatted_message_log
+
 
 bos = PaimonBosClient("~/paimon_bos_client.yaml")
 
@@ -42,6 +44,7 @@ __all__ = (
     "ErnieChatDataConfig",
     "ErnieChatDataset",
     "ernie_chat_data_processor",
+    "ernie_chat_sft_data_processor",
 )
 
 
@@ -58,6 +61,55 @@ class ErnieChatDataConfig(DataConfig):
     filelist: str
 
 
+def ernie_chat_sft_data_processor(
+    datum_dict: dict[str, Any],
+    task_data_spec: TaskDataSpec,
+    tokenizer,
+    max_seq_length: int,
+    idx: int,
+    add_generation_prompt=True,
+) -> DatumSpec:
+
+    user_message = datum_dict["messages"]
+    user_message.append(datum_dict["candidates"][0][0])
+
+    for dialog in user_message:
+        for content in dialog["content"]:
+            if content["type"] == "image_url":
+                content["type"] = "image"
+                content["image"] = resolve_to_image(content.pop("image_url")["url"])
+
+    message_log = get_formatted_message_log(
+        user_message,
+        tokenizer,
+        task_data_spec,
+        add_bos_token=False,
+        add_eos_token=True, # TODO
+        add_generation_prompt=add_generation_prompt,
+    )
+    length = sum(len(m["token_ids"]) for m in message_log)
+
+    loss_multiplier = 1.0
+    if length > max_seq_length:
+        # make smaller and mask out
+        for message in message_log:
+            message["token_ids"] = message["token_ids"][
+                : min(4, max_seq_length // len(message_log))
+            ]
+            for key, value in message.items():
+                if isinstance(value, PackedTensor):
+                    message[key] = PackedTensor.empty_like(value)
+        loss_multiplier = 0.0
+
+    output = {
+        "message_log": message_log,
+        "length": length,
+        "extra_env_info": None,
+        "loss_multiplier": loss_multiplier,
+        "idx": idx,
+    }
+    return output
+
 def ernie_chat_data_processor(
     datum_dict: dict[str, Any],
     task_data_spec: TaskDataSpec,
@@ -68,8 +120,9 @@ def ernie_chat_data_processor(
     """Process a datum dictionary (directly loaded from response_datasets/<dataset_name>.py) into a DatumSpec for the VLM Environment."""
     # depending on the task, format the data differently
     user_message = datum_dict["messages"]
-    extra_env_info = {"ground_truth": datum_dict["tgt"]}
-
+    extra_env_info = {
+        "ground_truth": datum_dict["candidates"][0][0]["content"][0]["text"]
+    }
     message_log: LLMMessageLogType = []
     # this is the string-tokenized conversation template for the generation policy (for vllm)
     if processor.chat_template is None:
@@ -179,7 +232,7 @@ class DataSingleSource:
             ds.append(
                 {
                     "messages": line["prompt"],
-                    "tgt": line["candidates"][0][0]["content"][0]["text"],
+                    "candidates": line["candidates"],
                     "task_name": self.task_name,
                 }
             )
@@ -372,7 +425,7 @@ class ErnieChatDataset:
             ds.append(
                 {
                     "messages": line["prompt"],
-                    "tgt": line["candidates"][0][0]["content"][0]["text"],
+                    "candidates": line["candidates"],
                     "task_name": self.task_name,
                 }
             )
