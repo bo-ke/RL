@@ -1211,6 +1211,7 @@ def grpo_train(
             with timer.time("total_step_time"):
                 # Prepare batch
                 print("▶ Preparing batch...", flush=True)
+                print(f"▶ Data-ID... {batch['idx']}", flush=True)
                 with timer.time("data_processing"):
                     # Repeat batch items
                     repeated_batch: BatchedDataDict[DatumSpec] = (
