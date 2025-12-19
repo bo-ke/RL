@@ -354,7 +354,7 @@ class ReeaoChatData:
             # 这里的关键是 DataLoader 必须是 sequential 的，不能再次 shuffle 样本索引。
             for i in range(0, len(samples), self.batch_size):
                 batch = samples[i : i + self.batch_size]
-                if len(batch) > 0:
+                if len(batch) == self.batch_size:
                     all_batches.append(batch)
 
         # 4. Shuffle Batch 顺序
@@ -368,6 +368,7 @@ class ReeaoChatData:
             self.data_seq.extend(batch)
         # 修正 num_samples (可能因为丢弃/补齐略有变化，或者保持一致)
         self.num_samples = len(self.data_seq)
+        assert self.num_samples % self.batch_size == 0, (self.num_samples, len(all_batches))
         print(f"Data sequence built. Total samples: {self.num_samples}, Total batches: {len(all_batches)}")
 
     def __len__(self):
