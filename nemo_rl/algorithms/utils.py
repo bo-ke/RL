@@ -274,6 +274,15 @@ def get_tokenizer(
             tokenizer = processor.tokenizer
         else:
             tokenizer = processor._tokenizer
+        # If the processor returns a raw tokenizers.Tokenizer instead of PreTrainedTokenizer,
+        # fall back to AutoTokenizer
+        if not hasattr(tokenizer, "pad_token"):
+            print(
+                "Processor tokenizer is not a PreTrainedTokenizer, falling back to AutoTokenizer"
+            )
+            tokenizer = AutoTokenizer.from_pretrained(
+                tokenizer_config["name"], trust_remote_code=True
+            )
     else:
         tokenizer = AutoTokenizer.from_pretrained(
             tokenizer_config["name"], trust_remote_code=True
@@ -323,6 +332,11 @@ def get_tokenizer(
         processor.bos_token_id = tokenizer.bos_token_id
         # copy name_or_path from tokenizer to processor for logging
         processor.name_or_path = tokenizer.name_or_path
+        # Inherit chat_template from tokenizer if processor doesn't have one (e.g., ERNIE models)
+        if hasattr(tokenizer, "chat_template") and tokenizer.chat_template is not None:
+            processor.chat_template = tokenizer.chat_template
+        if hasattr(tokenizer, "apply_chat_template"):
+            processor.apply_chat_template = tokenizer.apply_chat_template
 
     return tokenizer if processor is None else processor
 

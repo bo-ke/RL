@@ -1,4 +1,7 @@
 # Adding to .gitignore helps reduce the size of your working_dir
+*data_conf*
+.bns*
+.bos*
 .baidu-cc/*
 .claude/*
 .comate/*

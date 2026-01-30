@@ -1,0 +1,149 @@
+sft:
+  ## total number of steps to train will equal
+  ## min((max_num_epochs * len(train_dataloader)), max_num_steps)
+  val_period: 0
+  val_batches: 8
+  val_global_batch_size: 32
+  val_micro_batch_size: 1
+  max_num_epochs: 1
+  max_num_steps: 60
+  val_at_start: false
+  seed: 42
+
+policy:
+  model_name: "../Qwen3-VL-2B-Thinking"
+  # model_name: "../ERNIE-4.5-VL-28B-A3B-Thinking"
+  tokenizer:
+    name: ${policy.model_name} ## specify if you'd like to use a tokenizer different from the model's default
+  train_global_batch_size: 8
+  train_micro_batch_size: 1
+  max_total_sequence_length: 4096
+  precision: "bfloat16"
+  offload_optimizer_for_logprob: false
+  dtensor_cfg:
+    enabled: false
+  megatron_cfg:
+    enabled: true
+    env_vars:
+      LD_LIBRARY_PATH: "venvs/nemo_rl.models.policy.workers.megatron_policy_worker.MegatronPolicyWorker/lib/python3.12/site-packages/nvidia/cudnn/lib/:${oc.env:LD_LIBRARY_PATH,}"
+    bias_activation_fusion: false
+    empty_unused_memory_level: 1  # 1 is the minimum recommendation for RL since we almost always need to offload before beginning generation. Setting to 0 is faster, but you are more likely to run out of GPU memory.
+    activation_checkpointing: false
+    converter_type: "Qwen3ForCausalLM"
+    tensor_model_parallel_size: 1
+    expert_tensor_parallel_size: 1
+    expert_model_parallel_size: 1
+    pipeline_model_parallel_size: 1
+    num_layers_in_first_pipeline_stage: null
+    num_layers_in_last_pipeline_stage: null
+    context_parallel_size: 1
+    pipeline_dtype: ${policy.precision}
+    sequence_parallel: false
+    freeze_moe_router: true
+    moe_router_dtype: "fp64"
+    moe_router_load_balancing_type: "none" # "seq_aux_loss" causes logprob error divergence for grpo
+    moe_router_bias_update_rate: 0.0 # by default, disable bias updates for grpo
+    moe_permute_fusion: false
+    moe_enable_deepep: false
+    moe_token_dispatcher_type: "allgather"
+    moe_shared_expert_overlap: false
+    #gives ~20% training perf speedup with sequence packing 
+    apply_rope_fusion: True
+    
+    optimizer:
+      optimizer_cpu_offload: false
+      optimizer_offload_fraction: 0.0
+
+      optimizer: "adam"
+      lr: 5.0e-6
+      min_lr: 5.0e-7
+      weight_decay: 0.01
+      bf16: true
+      fp16: false
+      params_dtype: "float32"
+
+      #adam
+      adam_beta1: 0.9
+      adam_beta2: 0.999
+      adam_eps: 1e-8
+
+      #sgd
+      sgd_momentum: 0.9
+
+      #distributed optimizer
+      use_distributed_optimizer: true
+      use_precision_aware_optimizer: true
+
+      clip_grad: ${policy.max_grad_norm}
+
+    scheduler:
+      start_weight_decay: ${policy.megatron_cfg.optimizer.weight_decay}
+      end_weight_decay: ${policy.megatron_cfg.optimizer.weight_decay}
+      weight_decay_incr_style: "constant"
+      lr_decay_style: "constant"
+      lr_decay_iters: 1000
+      lr_warmup_iters: 13
+      lr_warmup_init: 5.0e-7
+
+    distributed_data_parallel_config:
+      grad_reduce_in_fp32: false
+      overlap_grad_reduce: true
+      overlap_param_gather: true
+      use_custom_fsdp: false
+      data_parallel_sharding_strategy: "optim_grads_params"
+
+  sequence_packing:
+    enabled: False
+  
+  make_sequence_length_divisible_by: ${policy.megatron_cfg.tensor_model_parallel_size}
+  max_grad_norm: 1.0
+  
+  dynamic_batching:
+    enabled: false
+    train_mb_tokens: ${mul:${policy.max_total_sequence_length}, ${policy.train_micro_batch_size}}
+    sequence_length_round: 64
+
+  
+
+checkpointing:
+  enabled: true
+  save_consolidated: true
+  checkpoint_dir: "results/sft_${policy.model_name}"
+  metric_name: "val:val_loss" # one of "val:" or "train:" followed by the metric name
+  higher_is_better: false
+  keep_top_k: 1
+  save_period: 10
+  checkpoint_must_save_by: null
+
+data:
+  add_generation_prompt: true
+  max_input_seq_length: ${policy.max_total_sequence_length} # upper bound, real truncation occurs at vllm.max_model_len
+  # filelist: "conf/data_conf_ernie_router_1119/toy_filelist"
+  train_data_config: ernie_router_data_conf_1125/ernie_router_data_config_1125.json 
+  #train_data_config: conf/data_conf_ernie_router_1119/toy_train_config.json  
+  prompt_file: ""
+  system_prompt_file: null
+  dataset_name: "ernie_router_1119"
+  split: ""
+  shuffle: true
+  num_workers: 1
+
+logger:
+  log_dir: "logs"  # Base directory for all logs
+  wandb_enabled: false # Make sure you do a ``wandb login [Your API key]'' before running
+  swanlab_enabled: false
+  mlflow_enabled: false
+  tensorboard_enabled: true
+  monitor_gpus: true  # If true, will monitor GPU usage and log to wandb and/or tensorboard
+  wandb:
+    project: "sft-dev"
+    name: "sft-dev-${data.dataset_name}"
+  tensorboard:
+    log_dir: "tb_logs-sft-dev-${data.dataset_name}"
+  gpu_monitoring:
+    collection_interval: 10  # How often to collect GPU usage metrics (in seconds)
+    flush_interval: 10  # How often to flush GPU usage metrics to the loggers (in seconds)
+
+cluster:
+  gpus_per_node: 2
+  num_nodes: 1

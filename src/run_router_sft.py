@@ -16,7 +16,7 @@ import argparse
 import os
 import pprint
 from functools import partial
-from typing import Any, Callable, Optional
+from typing import Any
 
 from omegaconf import OmegaConf
 from transformers import AutoTokenizer
@@ -25,13 +25,10 @@ from nemo_rl.algorithms.sft import MasterConfig, setup, sft_train
 from nemo_rl.algorithms.utils import get_tokenizer
 from nemo_rl.data import DataConfig
 from nemo_rl.data.datasets import AllTaskProcessedDataset
-from nemo_rl.data.interfaces import DatumSpec, TaskDataSpec
-from nemo_rl.data.llm_message_utils import get_formatted_message_log
 from nemo_rl.distributed.virtual_cluster import init_ray
 from nemo_rl.utils.config import load_config, parse_hydra_overrides
 from nemo_rl.utils.logger import get_next_experiment_dir
 from src.data.ernie_chat_dataset import ErnieChatDataset, ernie_chat_sft_data_processor
-from src.environments.ernie_router_environment import ErnieRouterEnvironment
 
 OmegaConf.register_new_resolver("mul", lambda a, b: a * b)
 
@@ -51,10 +48,12 @@ def parse_args():
 
 def setup_data(tokenizer: AutoTokenizer, data_config: DataConfig, seed: int):
     print("\n▶ Setting up data...")
-    print(f"\n DataBatchSize {data_config["train_batch_size"]}")
-    data: Any = ErnieChatDataset(train_data_config=data_config["train_data_config"],
-                                 batch_size=data_config["train_batch_size"],
-                                 shuffle=data_config["shuffle"])
+    print(f"\n DataBatchSize {data_config['train_batch_size']}")
+    data: Any = ErnieChatDataset(
+        train_data_config=data_config["train_data_config"],
+        batch_size=data_config["train_batch_size"],
+        shuffle=data_config["shuffle"],
+    )
     sft_task_spec = data.task_spec
 
     train_dataset = AllTaskProcessedDataset(
@@ -111,7 +110,7 @@ def main(is_vlm: bool = True):
         val_dataset,
         sft_task_spec,
     ) = setup_data(tokenizer, config["data"], config["sft"]["seed"])
-    config["data"]["shuffle"] = False # shuffle 由dataset内部维护
+    config["data"]["shuffle"] = False  # shuffle 由dataset内部维护
     (
         policy,
         cluster,
@@ -132,7 +131,6 @@ def main(is_vlm: bool = True):
         loss_fn,
         master_config,
         logger,
-        sft_task_spec,
         checkpointer,
         sft_save_state,
     )

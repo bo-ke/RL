@@ -1,14 +1,13 @@
 # -*- coding: utf-8 -*-
 # !/usr/bin/env python3
-"""@author: kebo
-@contact: kebo01@baidu.com
+"""Test ernie chat dataset for GRPO training.
 
+@author: kebo
+@contact: kebo01@baidu.com
 @version: 1.0
 @file: test_ernie_chat_dataset.py
 @time: 2025/11/19 16:01:40
 @Copyright (c) 2025 Baidu.com, Inc. All Rights Reserved
-
-这一行开始写关于本文件的说明与解释
 """
 
 import json
@@ -80,7 +79,7 @@ class TestErnieChatDataset(unittest.TestCase):
 
     def setUp(self):
         data_config = {
-            "train_data_config": "./conf/test_data/toy_train_config.json",
+            "train_data_config": "./conf/data_conf_ernie_router_1119/toy_train_config.json",
             "max_input_seq_length": 4096,
         }
         env_configs = {
@@ -95,7 +94,11 @@ class TestErnieChatDataset(unittest.TestCase):
         self.model_name = "Qwen/Qwen3-VL-2B-Thinking"
         self.data_config = data_config
         self.env_configs = env_configs
-        data = ErnieChatDataset(train_data_config=data_config["train_data_config"])
+        self.batch_size = 2
+        data = ErnieChatDataset(
+            train_data_config=data_config["train_data_config"],
+            batch_size=self.batch_size,
+        )
         processor = get_tokenizer({"name": self.model_name}, get_processor=True)
         task_name = data.task_spec.task_name
         vlm_task_spec = TaskDataSpec(
@@ -121,14 +124,13 @@ class TestErnieChatDataset(unittest.TestCase):
     def get_batch(self):
         dataloader = StatefulDataLoader(
             self.dataset,
-            batch_size=2,
+            batch_size=self.batch_size,
             shuffle=False,
             collate_fn=rl_collate_fn,
             drop_last=True,
             num_workers=0,
         )
         for batch in dataloader:
-            __import__("pdb").set_trace()
             repeated_batch: BatchedDataDict[DatumSpec] = batch.repeat_interleave(2)
             # Convert LLMMessageLogType to FlatMessagesType for generation
             batched_flat, input_lengths = batched_message_log_to_flat_message(
@@ -136,9 +138,8 @@ class TestErnieChatDataset(unittest.TestCase):
                 pad_value_dict={"token_ids": self.tokenizer.pad_token_id},
             )
             input_ids = batched_flat["token_ids"]
+            __import__("pdb").set_trace()
             yield repeated_batch
-            # prompts = format_prompt_for_vllm_generation(repeated_batch)
-            # __import__("pdb").set_trace()
 
     # def load_debug_batch(self):
     #     import torch

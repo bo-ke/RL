@@ -1,16 +1,13 @@
 # -*- coding: utf-8 -*-
 # !/usr/bin/env python3
-"""@author: kebo
-@contact: kebo01@baidu.com
+"""Ernie chat dataset for GRPO and SFT training.
 
+@author: kebo
+@contact: kebo01@baidu.com
 @version: 1.0
 @file: ernie_data.py
 @time: 2025/11/18 15:01:14
 @Copyright (c) 2025 Baidu.com, Inc. All Rights Reserved
-
-这一行开始写关于本文件的说明与解释
-
-
 """
 
 import copy
@@ -30,13 +27,12 @@ from nemo_rl.data.interfaces import (
     LLMMessageLogType,
     TaskDataSpec,
 )
+from nemo_rl.data.llm_message_utils import get_formatted_message_log
 from nemo_rl.data.multimodal_utils import (
     PackedTensor,
     get_dim_to_pack_along,
     get_multimodal_keys_from_processor,
 )
-from nemo_rl.data.llm_message_utils import get_formatted_message_log
-
 
 bos = PaimonBosClient("~/paimon_bos_client.yaml")
 
@@ -69,7 +65,6 @@ def ernie_chat_sft_data_processor(
     idx: int,
     add_generation_prompt=True,
 ) -> DatumSpec:
-
     user_message = datum_dict["messages"]
     user_message.append(datum_dict["candidates"][0][0])
 
@@ -84,21 +79,40 @@ def ernie_chat_sft_data_processor(
         tokenizer,
         task_data_spec,
         add_bos_token=False,
-        add_eos_token=True, # TODO
+        add_eos_token=True,  # TODO
         add_generation_prompt=add_generation_prompt,
     )
     length = sum(len(m["token_ids"]) for m in message_log)
 
     loss_multiplier = 1.0
     if length > max_seq_length:
-        # make smaller and mask out
-        for message in message_log:
-            message["token_ids"] = message["token_ids"][
-                : min(4, max_seq_length // len(message_log))
-            ]
-            for key, value in message.items():
-                if isinstance(value, PackedTensor):
-                    message[key] = PackedTensor.empty_like(value)
+        # 超长样本：创建 fake 数据，带一张空图，loss_multiplier=0
+        # 这样 vision encoder 参与计算但不影响训练
+        print(
+            f"[WARNING] Sample {idx} too long ({length} > {max_seq_length}), replacing with fake image data"
+        )
+        fake_image = Image.new(
+            "RGB", (56, 56), color="white"
+        )  # 最小的图像，产生最少的 patch
+        fake_message = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": fake_image},
+                    {"type": "text", "text": "hi"},
+                ],
+            },
+            {"role": "assistant", "content": [{"type": "text", "text": "hello"}]},
+        ]
+        message_log = get_formatted_message_log(
+            fake_message,
+            tokenizer,
+            task_data_spec,
+            add_bos_token=False,
+            add_eos_token=True,
+            add_generation_prompt=False,
+        )
+        length = sum(len(m["token_ids"]) for m in message_log)
         loss_multiplier = 0.0
 
     output = {
@@ -109,6 +123,7 @@ def ernie_chat_sft_data_processor(
         "idx": idx,
     }
     return output
+
 
 def ernie_chat_data_processor(
     datum_dict: dict[str, Any],
@@ -144,14 +159,15 @@ def ernie_chat_data_processor(
         add_generation_prompt=True,
     )
 
-    # Qwen model 可以，Ernie模型 当前不支持此接口
-    message: dict = processor.apply_chat_template(
-        user_message,
-        tokenize=True,
-        add_generation_prompt=True,
+    # 使用 processor 直接处理文本和图像，确保返回 pixel_values 和 image_grid_thw
+    # 这与 SFT 中 get_formatted_message_log 的处理方式一致
+    message: dict = processor(
+        text=[string_formatted_dialog],
+        images=images if len(images) > 0 else None,
         return_tensors="pt",
-        return_dict=True,
+        add_special_tokens=False,
     )
+
     # add
     model_inputs = {
         "role": "user",  # vllm envrioment reward step的时候有用
@@ -304,14 +320,14 @@ class ReeaoChatData:
             }
 
     def _build_data_seq(self):
-        """
-        构建数据序列，保证同一个 batch 内的数据类型一致。
-        策略：
-        1. 根据权重计算每个源需要采样的数量。
-        2. 按 data_type 将样本分组收集。
-        3. 在 data_type 内部切分成 batch。
-        4. 将所有 batch 收集起来进行 shuffle（batch 级别的 shuffle）。
-        5. 展平为最终的 data_seq。
+        """Build batch-aligned data sequence.
+
+        Strategy:
+        1. Calculate sample count for each source based on weight.
+        2. Group samples by data_type.
+        3. Split into batches within each data_type.
+        4. Shuffle batches to mix different data types.
+        5. Flatten to final data_seq.
         """
         print("Start building batch-aligned data sequence...")
 
@@ -326,7 +342,9 @@ class ReeaoChatData:
 
         # 补齐舍入误差导致的剩余样本，简单加给第一个源
         if allocated_samples < self.num_samples:
-            src_counts[list(self.data_source.keys())[0]] += (self.num_samples - allocated_samples)
+            src_counts[list(self.data_source.keys())[0]] += (
+                self.num_samples - allocated_samples
+            )
 
         # 2. 按 data_type 分组收集样本索引
         # 结构: {'lm': [(src_id, idx), ...], 'vqa': [(src_id, idx), ...]}
@@ -359,7 +377,9 @@ class ReeaoChatData:
 
         # 4. Shuffle Batch 顺序
         if self.shuffle_data:
-            print(f"Shuffling {len(all_batches)} batches to mix different data types...")
+            print(
+                f"Shuffling {len(all_batches)} batches to mix different data types..."
+            )
             self.rng.shuffle(all_batches)
 
         # 5. 展平
@@ -368,8 +388,13 @@ class ReeaoChatData:
             self.data_seq.extend(batch)
         # 修正 num_samples (可能因为丢弃/补齐略有变化，或者保持一致)
         self.num_samples = len(self.data_seq)
-        assert self.num_samples % self.batch_size == 0, (self.num_samples, len(all_batches))
-        print(f"Data sequence built. Total samples: {self.num_samples}, Total batches: {len(all_batches)}")
+        assert self.num_samples % self.batch_size == 0, (
+            self.num_samples,
+            len(all_batches),
+        )
+        print(
+            f"Data sequence built. Total samples: {self.num_samples}, Total batches: {len(all_batches)}"
+        )
 
     def __len__(self):
         return self.num_samples

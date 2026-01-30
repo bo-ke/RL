@@ -451,7 +451,17 @@ def setup_model_and_optimizer(
     # Autocast is disabled for custom MoE models (non-HF) to avoid numerical issues
     autocast_enabled = not (is_moe_model and not is_hf_model)
 
-    if not isinstance(model, PreTrainedModel) and is_moe_model and not is_hf_model:
+    # Log MoE and EP configuration
+    ep_size = distributed_manager.ep_size
+    print(
+        f"[Rank {rank}] MoE detection: is_moe_model={is_moe_model}, is_hf_model={is_hf_model}"
+    )
+    print(
+        f"[Rank {rank}] Expert Parallel config: ep_size={ep_size}, moe_mesh={moe_mesh}"
+    )
+
+    if not isinstance(model, PreTrainedModel) and is_moe_model:  # and not is_hf_model:
+        print(f"[Rank {rank}] Using custom MoE parallelization with EP")
         assert tp_size == 1, (
             f"Using custom implementation {model.__class__.__name__} for MoE model {model_name} which doesn't support tp_size > 1. "
             "Please use expert_parallel_size > 1 for custom implementation or set force_hf=True in your config at policy->dtensor_cfg->automodel_kwargs to use the HuggingFace implementation."
@@ -476,6 +486,7 @@ def setup_model_and_optimizer(
             ep_axis_name="ep",
             ep_shard_axis_names=("ep_shard",),
         )
+        print(f"[Rank {rank}] MoE parallelization applied successfully")
     else:
         model = distributed_manager.parallelize(model)
 

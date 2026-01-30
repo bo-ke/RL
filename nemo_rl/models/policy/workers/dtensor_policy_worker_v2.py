@@ -35,10 +35,6 @@ from nemo_automodel.components.distributed.tensor_utils import (
 from nemo_automodel.components.training.utils import scale_grads_and_clip_grad_norm
 from torch import nn
 from torch.distributed.tensor import DTensor, Shard
-from transformers import (
-    AutoProcessor,
-    AutoTokenizer,
-)
 
 from nemo_rl.algorithms.interfaces import LossFunction, LossType
 from nemo_rl.algorithms.loss_functions import SequencePackingLossWrapper
@@ -161,8 +157,8 @@ class DTensorPolicyWorkerV2(AbstractPolicyWorker, ColocatablePolicyInterface):
     def __init__(
         self,
         config: PolicyConfig,
-        tokenizer: AutoTokenizer,
-        processor: Optional[AutoProcessor] = None,
+        tokenizer_config: dict,
+        is_vlm: bool = False,
         weights_path: Optional[str] = None,
         optimizer_path: Optional[str] = None,
         init_optimizer: bool = True,
@@ -175,11 +171,26 @@ class DTensorPolicyWorkerV2(AbstractPolicyWorker, ColocatablePolicyInterface):
         # Apply patch to work around 'NotImplementedError: Operator aten.alias.default does not have a sharding strategy registered'
         apply_torch_aten_alias_tensor_patch()
 
+        # Load tokenizer/processor in worker to avoid pickle issues with trust_remote_code models
+        from nemo_rl.algorithms.utils import get_tokenizer
+
+        result = get_tokenizer(tokenizer_config, get_processor=is_vlm)
+        if is_vlm:
+            processor = result
+            tokenizer = (
+                processor.tokenizer
+                if hasattr(result, "tokenizer")
+                else result._tokenizer
+            )
+        else:
+            tokenizer = result
+            processor = None
+
         # Store configuration and tokenizer/processor
         self.cfg = config
         self.tokenizer = tokenizer
         self.processor = processor
-        self.is_vlm = processor is not None
+        self.is_vlm = is_vlm
         self.lora_enabled = (
             config["dtensor_cfg"].get("lora_cfg", {}).get("enabled", False)
         )

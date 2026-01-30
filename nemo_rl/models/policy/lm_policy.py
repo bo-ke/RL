@@ -166,11 +166,15 @@ class Policy(ColocatablePolicyInterface, GenerationInterface):
         )
 
         pre_init_queue = RayQueue()
+        # Pass tokenizer config instead of tokenizer/processor objects to avoid pickle issues
+        # with trust_remote_code models (transformers_modules not found in worker venv)
+        tokenizer_config = config.get("tokenizer", {"name": config["model_name"]})
+        is_vlm = processor is not None
         worker_builder = RayWorkerBuilder(
             worker_builder_cls,
             config,
-            tokenizer=tokenizer,
-            processor=processor,
+            tokenizer_config=tokenizer_config,
+            is_vlm=is_vlm,
             init_optimizer=init_optimizer,
             weights_path=weights_path,
             optimizer_path=optimizer_path,

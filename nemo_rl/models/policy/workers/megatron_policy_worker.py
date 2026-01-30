@@ -176,7 +176,8 @@ class MegatronPolicyWorker(AbstractPolicyWorker, ColocatablePolicyInterface):
     def __init__(
         self,
         config: PolicyConfig,
-        tokenizer: TokenizerType,
+        tokenizer_config: dict,
+        is_vlm: bool = False,
         weights_path: Optional[str] = None,
         optimizer_path: Optional[str] = None,
         init_optimizer: bool = True,
@@ -188,6 +189,21 @@ class MegatronPolicyWorker(AbstractPolicyWorker, ColocatablePolicyInterface):
         """Initialize the MegatronPolicyWorker."""
         # Apply patch from https://github.com/NVIDIA/TransformerEngine/pull/2286/files
         apply_transformer_engine_patch()
+
+        # Load tokenizer/processor in worker to avoid pickle issues with trust_remote_code models
+        from nemo_rl.algorithms.utils import get_tokenizer
+
+        result = get_tokenizer(tokenizer_config, get_processor=is_vlm)
+        if is_vlm:
+            processor = result
+            tokenizer = (
+                processor.tokenizer
+                if hasattr(result, "tokenizer")
+                else result._tokenizer
+            )
+        else:
+            tokenizer = result
+            processor = None
 
         self.cfg = config
 
@@ -327,11 +343,15 @@ class MegatronPolicyWorker(AbstractPolicyWorker, ColocatablePolicyInterface):
             mbs = self.cfg["train_micro_batch_size"]
         local_gbs = gbs // self.dp_size
         total_dataset_size = torch.tensor(data.size, device="cuda")
+        group = parallel_state.get_data_parallel_group()
+        print(f"HCG--{group.size()} ---> {group.rank()}")
+        print(f"GBS----{total_dataset_size},--- Before reduce total_dataset_size")
         torch.distributed.all_reduce(
             total_dataset_size,
             op=torch.distributed.ReduceOp.SUM,
             group=parallel_state.get_data_parallel_group(),
         )
+        print(f"-----GBS----{total_dataset_size},--- AFTER reduce total_dataset_size")
         num_global_batches = int(total_dataset_size.item()) // gbs
 
         if eval_mode:
@@ -475,15 +495,15 @@ class MegatronPolicyWorker(AbstractPolicyWorker, ColocatablePolicyInterface):
                 # when freezing sub-models we may have a mixture of successful and unsucessful ranks,
                 # so we must gather across mp ranks
                 update_successful = logical_and_across_model_parallel_group(
-                    update_successful
+                    update_successful, get_tensor_model_parallel_group()
                 )
                 # grad_norm and num_zeros_in_grad will be None on ranks without trainable params,
                 # so we must gather across mp ranks
                 grad_norm: float = reduce_max_stat_across_model_parallel_group(
-                    grad_norm
+                    grad_norm, get_tensor_model_parallel_group()
                 )
                 num_zeros_in_grad: float = reduce_max_stat_across_model_parallel_group(
-                    num_zeros_in_grad
+                    num_zeros_in_grad, get_tensor_model_parallel_group()
                 )
 
                 if update_successful:
@@ -667,8 +687,10 @@ class MegatronPolicyWorker(AbstractPolicyWorker, ColocatablePolicyInterface):
             multimodal_data = data_dict.get_multimodal_dict(
                 as_tensors=True, device=input_ids.device
             )
+            # print(f"[DEBUG] multimodal_data keys: {multimodal_data}")
             if len(multimodal_data) > 0:
                 position_ids = None
+                attention_mask = None
 
             additional_kwargs = {}
             # Mamba models currently do not support packed_seq_params
@@ -932,6 +954,7 @@ class MegatronPolicyWorker(AbstractPolicyWorker, ColocatablePolicyInterface):
             )
             if len(multimodal_data) > 0:
                 position_ids = None
+                attention_mask = None
 
             additional_kwargs = {}
             if packed_seq_params is not None:
