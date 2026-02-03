@@ -6,12 +6,13 @@ sft:
   val_global_batch_size: 32
   val_micro_batch_size: 1
   max_num_epochs: 1
-  max_num_steps: 60
+  max_num_steps: 1000000
   val_at_start: false
   seed: 42
 
 policy:
-  model_name: "../Qwen3-VL-2B-Thinking"
+  # model_name: "../Qwen3-VL-2B-Thinking"
+  model_name: "../Qwen3-VL-30B-A3B-Instruct"
   # model_name: "../ERNIE-4.5-VL-28B-A3B-Thinking"
   tokenizer:
     name: ${policy.model_name} ## specify if you'd like to use a tokenizer different from the model's default
@@ -32,7 +33,8 @@ policy:
     converter_type: "Qwen3ForCausalLM"
     tensor_model_parallel_size: 1
     expert_tensor_parallel_size: 1
-    expert_model_parallel_size: 1
+    expert_model_parallel_size: 8
+    moe_per_layer_logging: true
     pipeline_model_parallel_size: 1
     num_layers_in_first_pipeline_stage: null
     num_layers_in_last_pipeline_stage: null
@@ -108,7 +110,7 @@ policy:
 checkpointing:
   enabled: true
   save_consolidated: true
-  checkpoint_dir: "results/sft_${policy.model_name}"
+  checkpoint_dir: "results/sft_debug_model"
   metric_name: "val:val_loss" # one of "val:" or "train:" followed by the metric name
   higher_is_better: false
   keep_top_k: 1
@@ -145,5 +147,5 @@ logger:
     flush_interval: 10  # How often to flush GPU usage metrics to the loggers (in seconds)
 
 cluster:
-  gpus_per_node: 2
+  gpus_per_node: 8
   num_nodes: 1

@@ -187,21 +187,51 @@ def ernie_chat_data_processor(
     length = sum(len(m["token_ids"]) for m in message_log)
     loss_multiplier = 1.0
     if length >= max_seq_length:
-        # Treat truncated messages as text only
-        vllm_kwargs = {
-            "vllm_content": None,
-            "vllm_images": [],
+        # 超长样本：创建 fake 数据，带一张空图，loss_multiplier=0
+        # 这样 vision encoder 参与计算但不影响训练
+        print(
+            f"[WARNING] Sample {idx} too long ({length} > {max_seq_length}), replacing with fake image data"
+        )
+        fake_image = Image.new(
+            "RGB", (56, 56), color="white"
+        )  # 最小的图像，产生最少的 patch
+        fake_message = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": fake_image},
+                    {"type": "text", "text": "hi"},
+                ],
+            },
+        ]
+        string_formatted_dialog = processor.apply_chat_template(
+            fake_message,
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+        message: dict = processor(
+            text=[string_formatted_dialog],
+            images=[fake_image],
+            return_tensors="pt",
+            add_special_tokens=False,
+        )
+        model_inputs = {
+            "role": "user",
+            "token_ids": message["input_ids"][0],
         }
-
-        # make smaller and mask out
-        for chat_message in message_log:
-            chat_message["token_ids"] = chat_message["token_ids"][
-                : min(4, max_seq_length // len(message_log))
-            ]
-            for key, value in chat_message.items():
-                if isinstance(value, PackedTensor):
-                    chat_message[key] = PackedTensor.empty_like(value)
+        multimodal_keys = get_multimodal_keys_from_processor(processor)
+        for key in multimodal_keys:
+            if key in message and message[key] is not None:
+                model_inputs[key] = PackedTensor(
+                    message[key], dim_to_pack=get_dim_to_pack_along(processor, key)
+                )
+        message_log = [model_inputs]
+        length = sum(len(m["token_ids"]) for m in message_log)
         loss_multiplier = 0.0
+        vllm_kwargs = {
+            "vllm_content": string_formatted_dialog,
+            "vllm_images": [fake_image],
+        }
     else:
         # get the prompt content! (use this for vllm-backend that needs formatted dialog and list of images) for the entire conversation
         # add images for vllm serving
