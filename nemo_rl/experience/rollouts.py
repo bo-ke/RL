@@ -80,31 +80,73 @@ def generate_responses(
     generation_lengths = generation_outputs["generation_lengths"]
     unpadded_sequence_lengths = generation_outputs["unpadded_sequence_lengths"]
 
-    # Extract generated parts
+    # Filter out vision tokens (<|image_pad|>, <|video_pad|>) from generated responses
+    # These tokens should never appear in generated text, but vLLM may occasionally produce them
+    # which causes vision token count mismatch during training
+    VISION_TOKEN_IDS_TO_FILTER = {
+        151655,  # <|image_pad|>
+        151656,  # <|video_pad|>
+    }
+
+    # Extract generated parts and filter vision tokens
     generated_ids = []
+    filtered_token_counts = []
     for i in range(len(input_lengths)):
         input_len = input_lengths[i].item()
         total_length = unpadded_sequence_lengths[i].item()
         full_output = output_ids[i]
         generated_part = full_output[input_len:total_length]
+
+        # Filter out vision tokens from generated portion
+        mask = torch.ones(len(generated_part), dtype=torch.bool)
+        for token_id in VISION_TOKEN_IDS_TO_FILTER:
+            mask &= generated_part != token_id
+
+        filtered_count = (~mask).sum().item()
+        if filtered_count > 0:
+            filtered_token_counts.append((i, filtered_count))
+            generated_part = generated_part[mask]
+
         generated_ids.append(generated_part)
+
+    # Log warning if any vision tokens were filtered
+    if filtered_token_counts:
+        print(
+            f"[WARNING] Filtered vision tokens from {len(filtered_token_counts)} generated responses: "
+            f"{filtered_token_counts}",
+            flush=True,
+        )
 
     generated_texts = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
 
+    # Build filter masks for logprobs (need to recreate since we need them for logprobs too)
+    filter_masks = []
+    for i in range(len(input_lengths)):
+        input_len = input_lengths[i].item()
+        total_length = unpadded_sequence_lengths[i].item()
+        full_output = output_ids[i]
+        generated_part = full_output[input_len:total_length]
+
+        mask = torch.ones(len(generated_part), dtype=torch.bool)
+        for token_id in VISION_TOKEN_IDS_TO_FILTER:
+            mask &= generated_part != token_id
+        filter_masks.append(mask)
+
     # Append to message log
-    for i, (text, input_length, total_length) in enumerate(
-        zip(generated_texts, input_lengths, unpadded_sequence_lengths)
-    ):
+    for i, text in enumerate(generated_texts):
+        # Use the filtered generated_ids for token_ids
         assistant_message = {
             "role": "assistant",
             "content": text,
-            "token_ids": output_ids[i, input_length:total_length],
+            "token_ids": generated_ids[i],
         }
 
         if include_logprobs and "logprobs" in generation_outputs:
-            assistant_message["generation_logprobs"] = generation_outputs["logprobs"][
-                i, input_length:total_length
-            ]
+            input_len = input_lengths[i].item()
+            total_length = unpadded_sequence_lengths[i].item()
+            logprobs = generation_outputs["logprobs"][i, input_len:total_length]
+            # Apply the same filter mask to logprobs
+            assistant_message["generation_logprobs"] = logprobs[filter_masks[i]]
 
         batch["message_log"][i].append(assistant_message)
 

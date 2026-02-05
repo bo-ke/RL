@@ -51,7 +51,7 @@ loss_fn:
 checkpointing:
   enabled: true
   save_consolidated: true
-  checkpoint_dir: "results/debug_qwen3_vl_thinking"
+  checkpoint_dir: "results/debug_qwen3_vl_sft"
   metric_name: "val:accuracy" # one of "val:" or "train:" followed by the metric name
   higher_is_better: true
   keep_top_k: 3
@@ -59,7 +59,7 @@ checkpointing:
   checkpoint_must_save_by: null
 
 policy:
-  model_name: "../Qwen3-VL-30B-A3B-Thinking/"
+  model_name: "../Qwen3-VL-30B-A3B-Instruct/"
   # model_name: "../Qwen3-VL-2B-Thinking"
   tokenizer:
     name: ${policy.model_name} ## specify if you'd like to use a tokenizer different from the model's default

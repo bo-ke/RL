@@ -1,6 +1,6 @@
 #!/bin/bash
 source .venv/bin/activate
-
+export TORCH_CUDA_ARCH_LIST='12.9'
 # ============================================
 # 重要：设置 HEAD_NODE_IP 为 rank 0 机器的 IP
 # ============================================
@@ -12,6 +12,9 @@ HEAD_NODE_IP="10.95.237.147"
 # ============================================
 export NRL_MEGATRON_CHECKPOINT_DIR="/root/paddlejob/workspace/env_run/workspace/nemo-rl/.cache/megatron"
 export HF_HOME="/root/paddlejob/workspace/env_run/workspace/nemo-rl/.cache/huggingface"
+# 增加权重传输缓冲区比例，解决 MoE 大参数传输问题
+# 默认 0.3 对于 Qwen3-VL-30B-A3B 的专家层参数（768MB）不够用
+export NRL_REFIT_BUFFER_MEMORY_RATIO=0.5
 HEAD_PORT=6379
 NUM_GPUS=8
 
@@ -55,7 +58,7 @@ export RAY_ADDRESS="$HEAD_NODE_IP:$HEAD_PORT"
 # 只有 rank 0 运行训练
 if [ "$NODE_RANK" == "0" ]; then
     echo "[Rank 0] Starting training..."
-    python src/run_router_grpo.py --config=./conf/mc_vlm_grpo_2B.yaml
+    python src/run_router_grpo.py --config=./conf/mc_vlm_grpo_30BA3B.yaml 
 else
     # Worker 节点保持 Ray worker 运行
     echo "[Rank $NODE_RANK] Worker ready, waiting..."

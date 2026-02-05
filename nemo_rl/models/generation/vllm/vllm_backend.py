@@ -158,19 +158,19 @@ class VllmInternalWorkerExtension:
 
                 weights = []
                 offset = 0
+
                 for key in list_keys:
                     shape, dtype = self.state_dict_info[key]  # pyrefly
                     if isinstance(shape, list):
                         shape = torch.Size(shape)
                     size_in_bytes = dtype.itemsize * shape.numel()
-                    weights.append(
-                        (
-                            key,
-                            buffer[offset : offset + size_in_bytes]
-                            .view(dtype=dtype)
-                            .view(shape),
-                        )
+                    weight_tensor = (
+                        buffer[offset : offset + size_in_bytes]
+                        .view(dtype=dtype)
+                        .view(shape)
                     )
+                    weights.append((key, weight_tensor))
+
                     aligned_size = calculate_aligned_size(size_in_bytes)
                     offset += aligned_size
                 assert offset == used_bytes, (

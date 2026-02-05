@@ -687,7 +687,7 @@ class MegatronPolicyWorker(AbstractPolicyWorker, ColocatablePolicyInterface):
             multimodal_data = data_dict.get_multimodal_dict(
                 as_tensors=True, device=input_ids.device
             )
-            # print(f"[DEBUG] multimodal_data keys: {multimodal_data}")
+
             if len(multimodal_data) > 0:
                 position_ids = None
                 attention_mask = None

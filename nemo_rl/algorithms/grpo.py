@@ -477,6 +477,7 @@ def setup(
             weights_path=weights_path,
             optimizer_path=optimizer_path,
             init_optimizer=True,
+            init_reference_model=False,
         )
         return p, time.perf_counter() - t0
 
